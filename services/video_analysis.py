@@ -28,9 +28,6 @@ def analyze_video_with_openai(video_path, temp_output_dir, openai_api_key):
     if not openai_api_key:
         raise ValueError("OpenAI API Key is required for video analysis but was not provided.")
     
-    # Initialize OpenAI client. Removed 'proxies={}' as it caused a TypeError with this library version.
-    # The client should pick up proxy settings from environment variables (HTTP_PROXY, HTTPS_PROXY)
-    # if they are set on your system.
     client = OpenAI(api_key=openai_api_key)
 
     script_data = []
@@ -42,20 +39,29 @@ def analyze_video_with_openai(video_path, temp_output_dir, openai_api_key):
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    total_duration_seconds = total_frames / fps if fps > 0 else 0
+
+    print(f"Video opened: {video_path}")
+    print(f"FPS: {fps}")
+    print(f"Total Frames: {total_frames}")
+    print(f"Total Duration: {total_duration_seconds:.2f} seconds")
     
-    # Determine frame interval: e.g., 1 frame every 2 seconds for a balance of detail and cost
-    frame_sample_rate = 2 # seconds
+    # Determine frame interval:
+    # Analyzing 2 frames per second (0.5 seconds per frame)
+    frame_sample_rate = 0.5 # seconds
     frame_interval = int(fps * frame_sample_rate)
     if frame_interval == 0: # Ensure at least one frame is processed if FPS is very low
         frame_interval = 1
 
     frame_count = 0
-    print(f"Starting frame extraction and analysis for {video_path}...")
+    print(f"Starting frame extraction and analysis with interval: every {frame_sample_rate}s (every {frame_interval} frames)...")
     
     while True:
         ret, frame = cap.read()
         if not ret:
-            break # End of video
+            # This indicates the end of the video file or an error reading a frame.
+            print(f"End of video or error reading frame. Processed {frame_count} frames.")
+            break 
         
         if frame_count % frame_interval == 0:
             frame_time_seconds = frame_count / fps
@@ -69,14 +75,15 @@ def analyze_video_with_openai(video_path, temp_output_dir, openai_api_key):
             base64_image = get_base64_encoded_image(frame_filename)
             
             try:
-                # print(f"Analyzing frame at {frame_time_seconds:.2f}s...")
+                print(f"Analyzing frame at {frame_time_seconds:.2f}s (Frame {frame_count})...")
                 response = client.chat.completions.create(
                     model="gpt-4o", # Using GPT-4o for its vision capabilities
                     messages=[
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "Describe what is happening in this video frame concisely, focusing on key actions, objects, and the environment. Keep it to one or two sentences. This will be part of a YouTube video script."},
+                                {"type": "text", "text": 
+                                 "This image is a frame from a video. Your task is to analyze the entire video and create a script based on its content, matching timestamps. For this specific frame, describe concisely what is happening, focusing on key actions, objects, and the environment. Keep your description to 1-2 sentences, suitable as a line in a sequential video script."},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -108,7 +115,7 @@ def analyze_video_with_openai(video_path, temp_output_dir, openai_api_key):
         frame_count += 1
     
     cap.release()
-    print("Frame analysis complete.")
+    print("Frame extraction and analysis complete.")
 
     # --- 3. (Optional but Recommended) Audio Transcription with Whisper ---
     # This part requires pydub (pip install pydub) for audio conversion 
