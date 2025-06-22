@@ -1,0 +1,10 @@
+Flask==2.3.2
+python-dotenv==1.0.0
+openai==1.10.0
+opencv-python==4.9.0.80
+moviepy==1.0.3
+requests==2.32.3
+gunicorn==22.0.0
+Flask-Session==0.8.0
+numpy~=1.26.0
+httpx==0.25.2 # Pinning httpx to a compatible version

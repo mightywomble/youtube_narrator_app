@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}AI Video Narrator - Create Scripts & Narrate{% endblock %}
+{% block content %}
+
+<section id="uploadSection">
+    <h2>1. Upload Your Video</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="videoFile">Select a video file:</label>
+        <input type="file" id="videoFile" name="video" accept="video/*" required>
+        <button type="submit" id="uploadVideoBtn">Upload Video & Analyze</button>
+        <div id="uploadMessage" class="message"></div>
+        <p>
+            <em>Note: Video analysis can take a few minutes depending on video length.</em>
+        </p>
+    </form>
+</section>
+
+<section id="videoPlaybackSection" class="hidden video-section">
+    <h2>Original Video Preview</h2>
+    <video id="videoPlayer" controls></video>
+</section>
+
+<section id="scriptSection" class="hidden">
+    <h2>2. Generated Script</h2>
+    <label for="scriptText">Review and edit the generated script:</label>
+    <textarea id="scriptText" rows="10" placeholder="Script will appear here after video analysis..."></textarea>
+    <button id="generateSpeechBtn" disabled>Convert Script to Speech</button>
+    <div id="speechMessage" class="message"></div>
+    <audio id="audioPlayer" controls class="hidden"></audio>
+</section>
+
+<section id="mergeSection" class="hidden">
+    <h2>3. Merge Video & Audio</h2>
+    <button id="mergeBtn" disabled>Merge Video and Speech</button>
+    <div id="statusMessage" class="message"></div>
+    <div id="mergeProgressBarContainer" class="progress-container hidden">
+        <div id="mergeProgressBar" class="progress-bar">0%</div>
+        <div id="mergeProgressText" class="progress-text"></div>
+    </div>
+</section>
+
+<section id="mergedVideoPlaybackSection" class="hidden merged-video-section">
+    <h2>4. Check Merged Video</h2>
+    <video id="mergedVideoPlayer" controls></video>
+    <div class="button-group">
+        <button id="checkMergedVideoBtn" disabled>Play Merged Video</button>
+    </div>
+</section>
+
+<section id="youtubeUploadDetailsSection" class="hidden youtube-upload-section">
+    <h2>5. Upload to YouTube</h2>
+    <label for="youtubeTitle">Video Title:</label>
+    <input type="text" id="youtubeTitle" placeholder="Enter video title..." required>
+
+    <label for="youtubeDescription">Video Description:</label>
+    <textarea id="youtubeDescription" rows="5" placeholder="Enter video description..."></textarea>
+
+    <button id="youtubeUploadBtn" disabled>Upload to YouTube</button>
+    <div id="youtubeProgressBarContainer" class="progress-container hidden">
+        <div id="youtubeProgressBar" class="progress-bar">0%</div>
+        <div id="youtubeProgressText" class="progress-text"></div>
+    </div>
+    <p>
+        <em>Note: For a real YouTube upload, you will need to configure YouTube API credentials in the settings.</em>
+    </p>
+</section>
+
+{% endblock %}

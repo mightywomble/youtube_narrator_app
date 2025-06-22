@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - AI Video Narrator{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <h1>API Settings</h1>
+    <p>Enter your API keys below. For permanent storage, these should be set as environment variables on your server or in `instance/config.py`.</p>
+    <p>
+        <strong>Note:</strong> Keys entered and saved here will only be active until the Flask application restarts.
+        They are not persistently stored by this page.
+    </p>
+
+    <form id="settingsForm">
+        <div class="form-group">
+            <label for="openai_api_key">OpenAI API Key:</label>
+            <input type="text" id="openai_api_key" name="openai_api_key" placeholder="sk-..." value="">
+            <span class="status-indicator {% if openai_key_set %}set{% else %}not-set{% endif %}"></span>
+            {% if openai_key_set %}
+                <small style="color: green;"> (Loaded)</small>
+            {% else %}
+                <small style="color: red;"> (Not loaded)</small>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="youtube_api_key">YouTube Data API Key:</label>
+            <input type="text" id="youtube_api_key" name="youtube_api_key" placeholder="AIzaSy..." value="">
+            <span class="status-indicator {% if youtube_api_key_set %}set{% else %}not-set{% endif %}"></span>
+            {% if youtube_api_key_set %}
+                <small style="color: green;"> (Loaded)</small>
+            {% else %}
+                <small style="color: red;"> (Not loaded)</small>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="youtube_client_id">YouTube OAuth Client ID:</label>
+            <input type="text" id="youtube_client_id" name="youtube_client_id" placeholder="YOUR_CLIENT_ID.apps.googleusercontent.com" value="">
+            <span class="status-indicator {% if youtube_client_id_set %}set{% else %}not-set{% endif %}"></span>
+            {% if youtube_client_id_set %}
+                <small style="color: green;"> (Loaded)</small>
+            {% else %}
+                <small style="color: red;"> (Not loaded)</small>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="youtube_client_secret">YouTube OAuth Client Secret:</label>
+            <input type="text" id="youtube_client_secret" name="youtube_client_secret" placeholder="YOUR_CLIENT_SECRET" value="">
+            <!-- Client secret is not typically displayed once set -->
+        </div>
+
+        <button type="submit">Save Settings</button>
+        <div id="settingsMessage" class="message"></div>
+    </form>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const settingsForm = document.getElementById('settingsForm');
+        const settingsMessage = document.getElementById('settingsMessage');
+
+        settingsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(settingsForm);
+            
+            try {
+                const response = await fetch('/save_settings', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    settingsMessage.className = 'message success';
+                    // No automatic reload needed, as changes are not persistent across app restarts
+                    // The status indicators on this page reflect values loaded from app.config at page render time.
+                } else {
+                    settingsMessage.className = 'message error';
+                }
+                settingsMessage.textContent = data.message;
+            } catch (error) {
+                settingsMessage.className = 'message error';
+                settingsMessage.textContent = `Network error: ${error.message}`;
+            }
+        });
+    });
+</script>
+{% endblock %}
