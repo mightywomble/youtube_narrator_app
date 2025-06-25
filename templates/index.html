@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+
 {% block title %}AI Video Narrator - Create Scripts & Narrate{% endblock %}
+
 {% block content %}
 
 <section id="uploadSection">
@@ -13,13 +15,13 @@
             <em>Note: Video analysis can take a few minutes depending on video length.</em>
         </p>
 
-        <!-- New: Progress bar for file upload -->
+        <!-- Progress bar for file upload -->
         <div id="uploadProgressBarContainer" class="progress-container hidden">
             <div id="uploadProgressBar" class="progress-bar">0%</div>
             <div id="uploadProgressText" class="progress-text">File Upload: 0%</div>
         </div>
 
-        <!-- New: Progress bar for video analysis -->
+        <!-- Progress bar for video analysis -->
         <div id="analysisProgressBarContainer" class="progress-container hidden">
             <div id="analysisProgressBar" class="progress-bar">0%</div>
             <div id="analysisProgressText" class="progress-text">Analysis: Initializing...</div>
@@ -28,20 +30,36 @@
     </form>
 </section>
 
-<section id="videoPlaybackSection" class="hidden video-section">
-    <h2>Original Video Preview</h2>
-    <video id="videoPlayer" controls></video>
-</section>
+<!-- Main display area: Video on left, Script on right (equal halves) -->
+<div class="main-display-area">
+    <section id="videoPlaybackSection" class="hidden display-box display-half">
+        <h2>Original Video Preview</h2>
+        <video id="videoPlayer" controls></video>
+    </section>
 
-<section id="scriptSection" class="hidden">
-    <h2>2. Generated Script</h2>
-    <label for="scriptText">Review and edit the generated script:</label>
-    <textarea id="scriptText" rows="10" placeholder="Script will appear here after video analysis..."></textarea>
-    <button id="generateSpeechBtn" disabled>Convert Script to Speech</button>
-    <div id="speechMessage" class="message"></div>
-    <audio id="audioPlayer" controls class="hidden"></audio>
-</section>
+    <!-- Script Section (now side-by-side with video) -->
+    <section id="scriptSection" class="hidden display-box display-half">
+        <h2>2. Generated Script</h2>
+        <label for="scriptText">Review and edit the generated script:</label>
+        <textarea id="scriptText" rows="10" placeholder="Script will appear here after video analysis..."></textarea>
+        <div id="speechMessage" class="message"></div>
+        <audio id="audioPlayer" controls class="hidden"></audio>
 
+        <!-- Button for Convert Script to Speech, centered below text area -->
+        <div class="button-center-wrapper">
+            <button id="generateSpeechBtn" disabled>Convert Script to Speech</button>
+        </div>
+    </section>
+
+    <!-- The button panel section is no longer needed in this layout -->
+    <!-- <section id="buttonPanelSection" class="hidden display-box button-panel-box">
+        <div class="button-panel-content">
+            <button id="generateSpeechBtn" disabled>Convert Script to Speech</button>
+        </div>
+    </section> -->
+</div>
+
+<!-- The merge/check/youtube sections remain below the main display area -->
 <section id="mergeSection" class="hidden">
     <h2>3. Merge Video & Audio</h2>
     <button id="mergeBtn" disabled>Merge Video and Speech</button>
