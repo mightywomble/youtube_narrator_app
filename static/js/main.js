@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const analysisProgressText = document.getElementById('analysisProgressText');
 
     // Section containers to hide/show
+    const uploadSection = document.getElementById('uploadSection'); // Get the upload section element
     const scriptSection = document.getElementById('scriptSection');
     const speechSection = document.getElementById('speechSection');
     const videoPlaybackSection = document.getElementById('videoPlaybackSection');
@@ -120,12 +121,18 @@ document.addEventListener('DOMContentLoaded', () => {
         updateProgressBar(mergeProgressBar, mergeProgressText, 0, '');
         updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, '');
 
+        // Hide all major sections initially
+        hideSection(uploadSection); // Ensure upload section is hidden
         hideSection(scriptSection);
         hideSection(speechSection);
         hideSection(videoPlaybackSection);
         hideSection(mergeSection);
         hideSection(mergedVideoPlaybackSection);
         hideSection(youtubeUploadDetailsSection);
+
+        // Make the upload section visible at the very beginning when the app loads fresh
+        if (uploadSection) uploadSection.classList.remove('hidden');
+
 
         if (document.getElementById('uploadVideoBtn')) document.getElementById('uploadVideoBtn').disabled = false;
         if (videoFile) videoFile.disabled = false;
@@ -198,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 xhr.onload = function() {
                     if (xhr.status === 200) {
-                        const uploadResponseData = JSON.parse(xhr.responseText); // Expected JSON response from /upload_video
+                        const uploadResponseData = JSON.parse(xhr.responseText);
                         if (uploadResponseData.status === 'success' && uploadResponseData.unique_filename) {
                             updateProgressBar(uploadProgressBar, uploadProgressText, 100, 'File Upload: Complete');
                             uploadMessage.className = 'message success';
@@ -216,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     scriptTextarea.value = data.script.map(item => `${item.time}: ${item.description}`).join('\n');
                                     videoPlayer.src = uploadResponseData.video_url;
 
+                                    hideSection(uploadSection); // Hide upload section on completion
                                     showSection(scriptSection);
                                     showSection(videoPlaybackSection);
                                     if (generateSpeechBtn) generateSpeechBtn.disabled = false;
@@ -224,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     updateProgressBar(analysisProgressBar, analysisProgressText, 0, data.message);
                                     uploadMessage.className = 'message error';
                                     uploadMessage.textContent = data.message || 'Video analysis failed.';
-                                    resetUI();
+                                    resetUI(); // Show upload section again on error
                                     es.close();
                                 }
                             };
@@ -234,21 +242,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                 updateProgressBar(analysisProgressBar, analysisProgressText, 0, 'Analysis failed due to connection error.');
                                 uploadMessage.className = 'message error';
                                 uploadMessage.textContent = 'Video analysis failed due to connection error.';
-                                resetUI();
-                                if (es) es.close(); // Ensure EventSource is closed
+                                resetUI(); // Show upload section again on error
+                                if (es) es.close();
                             };
 
                         } else {
                             uploadMessage.className = 'message error';
                             uploadMessage.textContent = uploadResponseData.error || 'Failed to get analysis stream.';
-                            resetUI();
+                            resetUI(); // Show upload section again on error
                             console.error('Upload failed with server response:', uploadResponseData);
                         }
                     } else {
-                        // Handle non-200 responses from the initial upload POST
                         uploadMessage.className = 'message error';
                         uploadMessage.textContent = `Server error during upload: ${xhr.statusText}`;
-                        resetUI();
+                        resetUI(); // Show upload section again on error
                         console.error('XHR Upload Error:', xhr.status, xhr.statusText);
                     }
                     setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
@@ -258,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 xhr.onerror = function() {
                     uploadMessage.className = 'message error';
                     uploadMessage.textContent = `Network error during XHR upload.`;
-                    resetUI();
+                    resetUI(); // Show upload section again on error
                     console.error('XHR Network Error.');
                     setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
                 };
@@ -267,10 +274,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
             } catch (error) {
-                // This catch block is for errors occurring *before* xhr.send() or synchronous errors during setup.
                 uploadMessage.className = 'message error';
                 uploadMessage.textContent = `General error during upload/analysis setup: ${error.message}`;
-                resetUI();
+                resetUI(); // Show upload section again on error
                 console.error('General error during setup:', error);
                 setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
             }
