@@ -32,7 +32,7 @@ def upload_video():
     """Handles video file upload and initiates analysis."""
     if 'video' not in request.files:
         return jsonify({'error': 'No video file part'}), 400
-    
+
     file = request.files['video']
     if file.filename == '':
         return jsonify({'error': 'No selected video file'}), 400
@@ -42,26 +42,26 @@ def upload_video():
         unique_filename = str(uuid.uuid4()) + "_" + secure_filename(file.filename)
         video_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(video_path)
-        
+
         session['video_path'] = video_path # Store path in session
-        
+
         try:
             # Create a temporary output directory for frames/audio
             temp_output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'temp_analysis_' + str(uuid.uuid4()))
             os.makedirs(temp_output_dir, exist_ok=True)
-            
-            # Pass the OpenAI API key explicitly from the current_app config
-            openai_key = current_app.config.get('OPENAI_API_KEY')
-            if not openai_key:
-                raise ValueError("OpenAI API Key is not configured. Please set it in settings.")
 
-            # Analyze video and get script data
-            script = analyze_video_with_openai(video_path, temp_output_dir, openai_key)
+            # Pass the Gemini API key explicitly from the current_app config for video analysis
+            gemini_key = current_app.config.get('GEMINI_API_KEY')
+            if not gemini_key:
+                raise ValueError("Gemini API Key is not configured. Please set it in settings.")
+
+            # Analyze video using Gemini
+            script = analyze_video_with_openai(video_path, temp_output_dir, gemini_key) # Pass gemini_key here
             session['script'] = script # Store script in session
-            
+
             # Clean up temp_output_dir (optional, or keep for debugging)
             # os.rmdir(temp_output_dir) # This would delete empty dir, need to delete contents first
-            
+
             return jsonify({'message': 'Video uploaded and analysis initiated!', 'script': script, 'video_url': f'/static/uploads/{unique_filename}'})
         except Exception as e:
             # Clean up uploaded video if analysis fails
@@ -70,7 +70,7 @@ def upload_video():
             # Log the full traceback for debugging
             current_app.logger.error(f"Video analysis failed: {str(e)}", exc_info=True)
             return jsonify({'error': f'Video analysis failed: {str(e)}'}), 500
-    
+
     return jsonify({'error': 'An unexpected error occurred during upload.'}), 500
 
 @main_bp.route('/generate_speech', methods=['POST'])
@@ -91,13 +91,13 @@ def generate_speech():
     try:
         def generate():
             yield "data: {'status': 'in_progress', 'message': 'Starting speech generation...'}\n\n"
-            
+
             # This is where the Gemini API call would happen from the backend.
             # For this example, we will make a dummy call to the service.
             # The prompt in audio_synthesis.py will ensure the Gemini call works.
             for progress_info in convert_text_to_speech_gemini(script_text, audio_path):
                 yield f"data: {progress_info}\n\n"
-            
+
             session['audio_path'] = audio_path # Store audio path in session
             yield "data: {'status': 'complete', 'message': 'Speech generation complete!', 'audio_url': '" + f'/static/uploads/{audio_filename}' + "'}\n\n"
 
@@ -127,10 +127,10 @@ def merge_video_audio_route():
             yield "data: {'status': 'in_progress', 'message': 'Starting video-audio merge...'}\n\n"
             for progress_info in merge_video_audio(video_path, audio_path, merged_video_path):
                 yield f"data: {progress_info}\n\n"
-            
+
             session['merged_video_path'] = merged_video_path # Store merged video path
             yield "data: {'status': 'complete', 'message': 'Merge complete!', 'merged_video_url': '" + f'/static/uploads/{merged_filename}' + "'}\n\n"
-        
+
         return Response(progress_generator(), mimetype='text/event-stream')
 
     except Exception as e:
@@ -183,6 +183,6 @@ def cleanup_files():
                 removed_count += 1
             except Exception as e:
                 current_app.logger.error(f"Error cleaning up file {f_path}: {e}", exc_info=True)
-    
+
     return jsonify({'message': f'Cleaned up {removed_count} temporary files.'})
 

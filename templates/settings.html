@@ -12,11 +12,13 @@
     </p>
 
     <form id="settingsForm">
+        <!-- Removed OpenAI API Key field as Whisper integration is temporarily removed -->
+
         <div class="form-group">
-            <label for="openai_api_key">OpenAI API Key:</label>
-            <input type="text" id="openai_api_key" name="openai_api_key" placeholder="sk-..." value="">
-            <span class="status-indicator {% if openai_key_set %}set{% else %}not-set{% endif %}"></span>
-            {% if openai_key_set %}
+            <label for="gemini_api_key">Gemini API Key (for video analysis):</label>
+            <input type="text" id="gemini_api_key" name="gemini_api_key" placeholder="AIza..." value="">
+            <span class="status-indicator {% if gemini_key_set %}set{% else %}not-set{% endif %}"></span>
+            {% if gemini_key_set %}
                 <small style="color: green;"> (Loaded)</small>
             {% else %}
                 <small style="color: red;"> (Not loaded)</small>
@@ -65,7 +67,7 @@
             e.preventDefault();
 
             const formData = new FormData(settingsForm);
-            
+
             try {
                 const response = await fetch('/save_settings', {
                     method: 'POST',
@@ -75,8 +77,6 @@
 
                 if (response.ok && data.status === 'success') {
                     settingsMessage.className = 'message success';
-                    // No automatic reload needed, as changes are not persistent across app restarts
-                    // The status indicators on this page reflect values loaded from app.config at page render time.
                 } else {
                     settingsMessage.className = 'message error';
                 }
@@ -88,4 +88,3 @@
         });
     });
 </script>
-{% endblock %}

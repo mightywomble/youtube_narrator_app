@@ -1,10 +1,11 @@
 Flask==2.3.2
 python-dotenv==1.0.0
-openai==1.10.0
 opencv-python==4.9.0.80
 moviepy==1.0.3
 requests==2.32.3
 gunicorn==22.0.0
 Flask-Session==0.8.0
 numpy~=1.26.0
-httpx==0.25.2 # Pinning httpx to a compatible version
+httpx==0.25.2
+google-generativeai==0.7.0 # Retained for Gemini API
+# openai removed as it's no longer directly used in video_analysis.py
