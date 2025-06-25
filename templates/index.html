@@ -12,6 +12,19 @@
         <p>
             <em>Note: Video analysis can take a few minutes depending on video length.</em>
         </p>
+
+        <!-- New: Progress bar for file upload -->
+        <div id="uploadProgressBarContainer" class="progress-container hidden">
+            <div id="uploadProgressBar" class="progress-bar">0%</div>
+            <div id="uploadProgressText" class="progress-text">File Upload: 0%</div>
+        </div>
+
+        <!-- New: Progress bar for video analysis -->
+        <div id="analysisProgressBarContainer" class="progress-container hidden">
+            <div id="analysisProgressBar" class="progress-bar">0%</div>
+            <div id="analysisProgressText" class="progress-text">Analysis: Initializing...</div>
+        </div>
+
     </form>
 </section>
 
@@ -64,5 +77,4 @@
         <em>Note: For a real YouTube upload, you will need to configure YouTube API credentials in the settings.</em>
     </p>
 </section>
-
 {% endblock %}

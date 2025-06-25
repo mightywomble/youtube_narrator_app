@@ -3,13 +3,13 @@ import uuid
 from flask import Blueprint, request, jsonify, render_template, current_app, session, Response
 from werkzeug.utils import secure_filename
 import time
+import json # For JSON encoding of SSE messages
 
 # Import services
 from services.video_analysis import analyze_video_with_openai
 from services.audio_synthesis import convert_text_to_speech_gemini
 from services.video_merging import merge_video_audio
 from services.youtube_api import upload_video_to_youtube # Placeholder for now
-from utils.helpers import generate_progress_stream
 
 main_bp = Blueprint('main', __name__)
 
@@ -29,7 +29,10 @@ def index():
 
 @main_bp.route('/upload_video', methods=['POST'])
 def upload_video():
-    """Handles video file upload and initiates analysis."""
+    """
+    Handles video file upload and initiates analysis.
+    Returns JSON response for initial upload status.
+    """
     if 'video' not in request.files:
         return jsonify({'error': 'No video file part'}), 400
 
@@ -38,40 +41,98 @@ def upload_video():
         return jsonify({'error': 'No selected video file'}), 400
 
     if file:
-        # Create a unique filename to prevent clashes
+        # Create a unique filename for the uploaded video
         unique_filename = str(uuid.uuid4()) + "_" + secure_filename(file.filename)
         video_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(video_path)
 
-        session['video_path'] = video_path # Store path in session
+        # Store original video path in session immediately for later use
+        session['video_path'] = video_path
 
+        # Save the file to disk here
         try:
-            # Create a temporary output directory for frames/audio
-            temp_output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'temp_analysis_' + str(uuid.uuid4()))
-            os.makedirs(temp_output_dir, exist_ok=True)
-
-            # Pass the Gemini API key explicitly from the current_app config for video analysis
-            gemini_key = current_app.config.get('GEMINI_API_KEY')
-            if not gemini_key:
-                raise ValueError("Gemini API Key is not configured. Please set it in settings.")
-
-            # Analyze video using Gemini
-            script = analyze_video_with_openai(video_path, temp_output_dir, gemini_key) # Pass gemini_key here
-            session['script'] = script # Store script in session
-
-            # Clean up temp_output_dir (optional, or keep for debugging)
-            # os.rmdir(temp_output_dir) # This would delete empty dir, need to delete contents first
-
-            return jsonify({'message': 'Video uploaded and analysis initiated!', 'script': script, 'video_url': f'/static/uploads/{unique_filename}'})
+            print(f"Saving uploaded file to: {video_path}")
+            file.save(video_path)
+            print("File saved successfully.")
         except Exception as e:
-            # Clean up uploaded video if analysis fails
-            if os.path.exists(video_path):
-                os.remove(video_path)
-            # Log the full traceback for debugging
-            current_app.logger.error(f"Video analysis failed: {str(e)}", exc_info=True)
-            return jsonify({'error': f'Video analysis failed: {str(e)}'}), 500
+            current_app.logger.error(f"Error saving uploaded file: {str(e)}", exc_info=True)
+            return jsonify({'error': f'Failed to save uploaded file: {str(e)}'}), 500
+
+        # Now, return a JSON response indicating successful upload,
+        # which will trigger the frontend to open a new SSE connection for analysis.
+        return jsonify({
+            'status': 'success',
+            'message': 'Video uploaded. Starting analysis...',
+            'unique_filename': unique_filename,
+            'video_url': f'/static/uploads/{unique_filename}'
+        })
 
     return jsonify({'error': 'An unexpected error occurred during upload.'}), 500
+
+@main_bp.route('/stream_analysis_progress')
+def stream_analysis_progress():
+    """
+    Streams progress updates for video analysis using Server-Sent Events (SSE).
+    This route is called *after* the initial file upload is complete.
+    """
+    unique_filename = request.args.get('video_filename')
+    if not unique_filename:
+        return Response(f"data: {json.dumps({'status': 'error', 'message': 'Missing video_filename parameter.'})}\n\n", mimetype='text/event-stream')
+
+    video_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
+    if not os.path.exists(video_path):
+        return Response(f"data: {json.dumps({'status': 'error', 'message': 'Video file not found for analysis.'})}\n\n", mimetype='text/event-stream')
+
+    # Get the application instance to push context (if needed for things other than current_app.logger)
+    app = current_app._get_current_object() # Get the real app object from the proxy
+
+    final_script_for_return = [] # To capture the script within the generator
+
+    def stream_wrapper_with_context_and_capture():
+        nonlocal final_script_for_return # To modify this variable
+
+        # Create a temporary request context for the duration of the generator
+        with app.test_request_context():
+            try:
+                # All existing code from original generate_progress_stream goes here
+                temp_output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'temp_analysis_' + str(uuid.uuid4()))
+                os.makedirs(temp_output_dir, exist_ok=True)
+
+                gemini_key = current_app.config.get('GEMINI_API_KEY')
+                if not gemini_key:
+                    raise ValueError("Gemini API Key is not configured. Please set it in settings.")
+
+                yield f"data: {json.dumps({'status': 'in_progress', 'progress': 0, 'message': 'Analysis: Initializing Gemini analysis...'})}\n\n"
+
+                analysis_generator_obj = analyze_video_with_openai(video_path, temp_output_dir, gemini_key)
+
+                for progress_update in analysis_generator_obj:
+                    if isinstance(progress_update, dict) and 'final_script_data' in progress_update:
+                        final_script_for_return = progress_update['final_script_data'] # Capture the script here
+                        # Store in session now, within the test_request_context
+                        session['script'] = final_script_for_return
+                        yield f"data: {json.dumps({'status': 'in_progress', 'progress': 100, 'message': 'Analysis: Script parsing complete.'})}\n\n"
+                    else:
+                        yield f"data: {json.dumps(progress_update)}\n\n"
+
+                yield f"data: {json.dumps({'status': 'complete', 'message': 'Analysis: Complete!', 'script': final_script_for_return})}\n\n"
+
+            except Exception as e:
+                error_message = f"Video analysis failed: {str(e)}"
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                current_app.logger.error(error_message, exc_info=True)
+                yield f"data: {json.dumps({'status': 'error', 'message': error_message})}\n\n"
+            finally:
+                try:
+                    os.rmdir(temp_output_dir)
+                except OSError as e:
+                    if "Directory not empty" in str(e):
+                        current_app.logger.warning(f"Warning: Could not remove temporary directory {temp_output_dir}: {e}. It might not be empty from prior runs.")
+                    else:
+                        current_app.logger.error(f"Error removing temporary directory {temp_output_dir}: {e}")
+
+    return Response(stream_wrapper_with_context_and_capture(), mimetype='text/event-stream')
+
 
 @main_bp.route('/generate_speech', methods=['POST'])
 def generate_speech():

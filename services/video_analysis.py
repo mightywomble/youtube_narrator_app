@@ -5,6 +5,7 @@ import google.generativeai as genai
 from moviepy.editor import VideoFileClip # Still needed for audio properties
 import json
 import time
+from flask import session # Import session if needed for context, but not for direct script storage
 
 # Configure Google Generative AI with the API key
 def configure_gemini(api_key):
@@ -42,7 +43,7 @@ def wait_for_file_active(file_object, timeout=300, interval=5):
             print(f"File '{file_object.display_name}' is now ACTIVE.")
             return retrieved_file
         elif retrieved_file.state.name == 'FAILED':
-            raise Exception(f"File '{file_object.display_name}' processing FAILED.")
+            raise Exception(f"File '{retrieved_file.display_name}' processing FAILED.") # Use display_name here
 
         print(f"File state: {retrieved_file.state.name}. Waiting {interval} seconds...")
         time.sleep(interval)
@@ -58,8 +59,9 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
         temp_output_dir (str): A temporary directory for any intermediate files (less used now).
         gemini_api_key (str): The Gemini API key to use for authentication.
 
-    Returns:
-        list: A list of dictionaries, each containing 'time' and 'description' for the synthesized script.
+    Yields:
+        dict: Progress updates for the frontend (status, progress, message),
+              or a special dict containing 'final_script_data'.
     """
 
     if not gemini_api_key:
@@ -67,30 +69,31 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
 
     configure_gemini(gemini_api_key)
 
-    # Use gemini-1.5-flash for video understanding
     gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
     print(f"Starting direct video analysis with Gemini for: {video_path}")
+    yield {"status": "in_progress", "progress": 5, "message": "Analysis: Initializing upload to Gemini..."}
 
-    uploaded_file = None # Initialize to None for the finally block
+    uploaded_file = None
+    synthesized_script_content = []
+
     try:
-        # Get MIME type for the video file
         import mimetypes
         mime_type, _ = mimetypes.guess_type(video_path)
         if not mime_type or not mime_type.startswith('video/'):
             raise ValueError(f"Could not determine video MIME type or it's not a video: {mime_type}")
 
-        # Upload the video file using Gemini's File API
+        yield {"status": "in_progress", "progress": 10, "message": "Analysis: Uploading video to Gemini File API..."}
         print(f"Uploading video to Gemini File API: {video_path} with MIME type {mime_type}")
         uploaded_file = genai.upload_file(path=video_path, display_name=os.path.basename(video_path), mime_type=mime_type)
         print(f"Uploaded file URI: {uploaded_file.uri}")
+        yield {"status": "in_progress", "progress": 30, "message": "Analysis: File uploaded. Waiting for processing..."}
 
-        # Wait for the uploaded file to become ACTIVE
         active_uploaded_file = wait_for_file_active(uploaded_file)
+        yield {"status": "in_progress", "progress": 60, "message": "Analysis: File ready. Sending to model..."}
 
-        # Construct the prompt with the file part (using the ACTIVE file)
         prompt_parts = [
-            active_uploaded_file, # Use the file object that is confirmed ACTIVE
+            active_uploaded_file,
             "Analyse the attached video and create a script based on the timings in the video explaining what is happening in the video. Format the output as a list of timestamped descriptions. Example: '00:05 - A person enters the room. 00:10 - They sit at a desk.' Ensure all significant events throughout the entire video are captured with accurate timestamps."
         ]
 
@@ -98,54 +101,50 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
         response = gemini_model.generate_content(prompt_parts)
         synthesized_text = response.text
         print("Gemini analysis complete.")
+        yield {"status": "in_progress", "progress": 90, "message": "Analysis: Model response received. Parsing script..."}
 
-        # --- Post-processing: Parse the Gemini response into structured script_data ---
-        synthesized_script_content = []
-
-        # Heuristic to parse Gemini's response (assumes "MM:SS - Description" format)
         for line in synthesized_text.split('\n'):
             line = line.strip()
-            # Basic check for timestamp format MM:SS -
             if line and len(line) > 5 and line[2] == ':' and line[5] == ' ':
-                parts = line.split(' - ', 1) # Split only on the first ' - '
+                parts = line.split(' - ', 1)
                 if len(parts) == 2:
                     synthesized_script_content.append({
                         "time": parts[0].strip(),
                         "description": parts[1].strip()
                     })
-                else: # Fallback if parsing fails, but line exists
+                else:
                      synthesized_script_content.append({
                         "time": "",
                         "description": line
                     })
-            elif line: # Add non-timestamped lines as descriptions
+            elif line:
                  synthesized_script_content.append({
                     "time": "",
                     "description": line
                 })
 
+        # Instead of storing in session directly, yield it as a special final message
+        yield {"final_script_data": synthesized_script_content}
+
     except Exception as e:
         print(f"Error during Gemini video analysis: {e}")
-        synthesized_script_content = [{"time": "00:00", "description": f"Video analysis failed: {str(e)} Please check your Gemini API key and try again."}]
+        error_message = f"Video analysis failed: {str(e)}"
+        yield {"status": "error", "progress": 0, "message": error_message}
     finally:
-        # IMPORTANT: Clean up the uploaded file from Gemini's File API
-        # This prevents incurring storage costs and adheres to good practice.
-        if uploaded_file: # Ensure uploaded_file exists
+        if uploaded_file:
             try:
                 genai.delete_file(uploaded_file.name)
                 print(f"Cleaned up uploaded file: {uploaded_file.name}")
             except Exception as e:
                 print(f"Error cleaning up Gemini uploaded file {uploaded_file.name}: {e}")
 
-        # Clean up local temporary directory (from previous frame extraction, now mostly empty)
         try:
             os.rmdir(temp_output_dir)
         except OSError as e:
             if "Directory not empty" in str(e):
-                # This can happen if previous runs left files, or if there's a delay in OS cleanup
                 print(f"Warning: Could not remove temporary directory {temp_output_dir}: {e}. It might not be empty from prior runs.")
             else:
                 print(f"Error removing temporary directory {temp_output_dir}: {e}")
 
-    return synthesized_script_content
-
+    # This final yield is no longer needed here, as final_script_data is yielded above.
+    # The 'complete' status will be sent by main_routes.py after receiving final_script_data.

@@ -23,7 +23,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const youtubeProgressText = document.getElementById('youtubeProgressText');
     const statusMessage = document.getElementById('statusMessage');
 
-    // Section containers to hide/show - Ensure these IDs exist in index.html!
+    // New: Elements for upload and analysis progress
+    const uploadProgressBarContainer = document.getElementById('uploadProgressBarContainer');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadProgressText = document.getElementById('uploadProgressText');
+    const analysisProgressBarContainer = document.getElementById('analysisProgressBarContainer');
+    const analysisProgressBar = document.getElementById('analysisProgressBar');
+    const analysisProgressText = document.getElementById('analysisProgressText');
+
+    // Section containers to hide/show
     const scriptSection = document.getElementById('scriptSection');
     const speechSection = document.getElementById('speechSection');
     const videoPlaybackSection = document.getElementById('videoPlaybackSection');
@@ -34,14 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper to show/hide sections
     const showSection = (element) => {
-        if (element) { // Add null check
+        if (element) {
             element.classList.remove('hidden');
         } else {
             console.warn("Attempted to show a null element. Ensure all section IDs exist in index.html.");
         }
     };
     const hideSection = (element) => {
-        if (element) { // Add null check
+        if (element) {
             element.classList.add('hidden');
         } else {
             console.warn("Attempted to hide a null element. Ensure all section IDs exist in index.html.");
@@ -50,15 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper for progress bar updates - DEFINED FIRST
     const updateProgressBar = (progressBarElement, textElement, progress, message) => {
-        if (progressBarElement && textElement) { // Add null checks
+        if (progressBarElement && textElement) {
             progressBarElement.style.width = `${progress}%`;
             progressBarElement.textContent = `${progress}%`;
             textElement.textContent = message;
             if (progress > 0 && progress < 100) {
                 progressBarElement.parentNode.classList.remove('hidden');
             } else if (progress === 100) {
-                // Can choose to hide or show "Complete"
                 progressBarElement.parentNode.classList.add('hidden'); // Hide on complete
+            } else if (progress === 0 && message === '') { // Hide if reset
+                 progressBarElement.parentNode.classList.add('hidden');
             }
         } else {
             console.warn("Attempted to update a null progress bar element.");
@@ -67,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper to enable/disable buttons and show spinner - DEFINED AFTER updateProgressBar
     const setProcessingState = (button, messageElement, isProcessing, message = 'Processing...') => {
-        if (!button) { // Null check for button
+        if (!button) {
             console.warn("Attempted to set processing state on a null button element.");
             return;
         }
@@ -76,17 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
             button.disabled = true;
             button.innerHTML = `<div class="spinner"></div><span class="loading-text">${message}</span>`;
             if (messageElement) {
-                messageElement.className = 'message'; // Clear previous status
+                messageElement.className = 'message';
                 messageElement.textContent = 'Please wait, this may take a moment...';
             }
         } else {
             button.disabled = false;
-            // Only restore original text if it was stored
             if (button.dataset.originalText) {
                 button.innerHTML = button.dataset.originalText;
             } else {
-                // Fallback if originalText wasn't set, e.g., for elements created dynamically
-                // Or if the button already had the spinner, just remove spinner
                 if (button.querySelector('.spinner')) {
                      button.innerHTML = 'Process'; // A generic fallback text
                 }
@@ -99,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper to reset UI state - DEFINED AFTER functions it calls
     const resetUI = () => {
-        // Null checks added implicitly by showSection/hideSection/updateProgressBar
         uploadMessage.textContent = '';
         scriptTextarea.value = '';
         speechMessage.textContent = '';
@@ -108,14 +113,12 @@ document.addEventListener('DOMContentLoaded', () => {
         mergedVideoPlayer.src = '';
         youtubeTitle.value = '';
         youtubeDescription.value = '';
-        
-        // Ensure these elements are not null before calling updateProgressBar
-        if (mergeProgressBar && mergeProgressText) {
-            updateProgressBar(mergeProgressBar, mergeProgressText, 0, '');
-        }
-        if (youtubeProgressBar && youtubeProgressText) {
-            updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, '');
-        }
+
+        // Reset all progress bars
+        updateProgressBar(uploadProgressBar, uploadProgressText, 0, '');
+        updateProgressBar(analysisProgressBar, analysisProgressText, 0, '');
+        updateProgressBar(mergeProgressBar, mergeProgressText, 0, '');
+        updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, '');
 
         hideSection(scriptSection);
         hideSection(speechSection);
@@ -124,7 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hideSection(mergedVideoPlaybackSection);
         hideSection(youtubeUploadDetailsSection);
 
-        // Ensure these button elements exist before accessing disabled property
         if (document.getElementById('uploadVideoBtn')) document.getElementById('uploadVideoBtn').disabled = false;
         if (videoFile) videoFile.disabled = false;
         if (generateSpeechBtn) generateSpeechBtn.disabled = true;
@@ -138,79 +140,139 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Store original button texts
     document.querySelectorAll('button').forEach(btn => {
-        // Ensure data-originalText is set only if it's not already,
-        // to avoid overwriting the spinner text if resetUI runs again
         if (!btn.dataset.originalText) {
             btn.dataset.originalText = btn.innerHTML;
         }
     });
 
-    // 1. Video Upload
-    // Check if uploadForm exists before adding event listener
+    // 1. Video Upload & Analysis (now streamed)
     if (uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault(); // This is crucial for preventing default GET submission
-            
-            console.log('Upload form submitted.'); // Debugging log
+            e.preventDefault();
+
+            console.log('Upload form submitted.');
 
             const file = videoFile.files[0];
             if (!file) {
                 uploadMessage.className = 'message error';
                 uploadMessage.textContent = 'Please select a video file.';
-                console.log('No file selected.'); // Debugging log
+                console.log('No file selected.');
                 return;
             }
 
-            // --- Frontend file type validation ---
-            // Ensure the file is actually a video based on MIME type
             if (!file.type.startsWith('video/')) {
                 uploadMessage.className = 'message error';
                 uploadMessage.textContent = 'Please select a valid video file (e.g., MP4, WebM, MOV). Image files like WebP are not supported for video analysis.';
-                console.error('Invalid file type selected:', file.type); // Debugging log
-                // Clear the file input for re-selection
-                videoFile.value = ''; 
+                console.error('Invalid file type selected:', file.type);
+                videoFile.value = '';
                 return;
             }
-            // --- End frontend file type validation ---
 
-            console.log('File selected:', file.name, 'Type:', file.type); // Debugging log
+            console.log('File selected:', file.name, 'Type:', file.type);
 
+            setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, true, 'Starting Upload...');
+            uploadProgressBarContainer.classList.remove('hidden'); // Show upload progress bar
+            analysisProgressBarContainer.classList.remove('hidden'); // Show analysis bar from start
+
+
+            // Reset progress bars before new upload
+            updateProgressBar(uploadProgressBar, uploadProgressText, 0, 'File Upload: 0%');
+            updateProgressBar(analysisProgressBar, analysisProgressText, 0, 'Analysis: Initializing...');
+
+            // Declare formData here, before the try block
             const formData = new FormData();
             formData.append('video', file);
 
-            setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, true, 'Uploading & Analyzing...');
-
+            let es; // Declare EventSource outside try block to access in finally
             try {
-                console.log('Sending POST request to /upload_video...'); // Debugging log
-                const response = await fetch('/upload_video', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
+                // XHR for file upload progress
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/upload_video', true);
 
-                if (response.ok) {
-                    uploadMessage.className = 'message success';
-                    uploadMessage.textContent = data.message;
-                    scriptTextarea.value = data.script.map(item => `${item.time}: ${item.description}`).join('\n');
-                    videoPlayer.src = data.video_url;
-                    
-                    showSection(scriptSection);
-                    showSection(videoPlaybackSection);
-                    if (generateSpeechBtn) generateSpeechBtn.disabled = false;
-                } else {
+                xhr.upload.onprogress = function(event) {
+                    if (event.lengthComputable) {
+                        const percentComplete = (event.loaded / event.total) * 100;
+                        updateProgressBar(uploadProgressBar, uploadProgressText, percentComplete, `File Upload: ${percentComplete.toFixed(1)}%`);
+                    }
+                };
+
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        const uploadResponseData = JSON.parse(xhr.responseText); // Expected JSON response from /upload_video
+                        if (uploadResponseData.status === 'success' && uploadResponseData.unique_filename) {
+                            updateProgressBar(uploadProgressBar, uploadProgressText, 100, 'File Upload: Complete');
+                            uploadMessage.className = 'message success';
+                            uploadMessage.textContent = uploadResponseData.message;
+
+                            // Now, start the SSE for analysis progress
+                            es = new EventSource(`/stream_analysis_progress?video_filename=${encodeURIComponent(uploadResponseData.unique_filename)}`);
+
+                            es.onmessage = (event) => {
+                                const data = JSON.parse(event.data);
+                                if (data.status === 'in_progress') {
+                                    updateProgressBar(analysisProgressBar, analysisProgressText, data.progress, data.message);
+                                } else if (data.status === 'complete') {
+                                    updateProgressBar(analysisProgressBar, analysisProgressText, 100, data.message);
+                                    scriptTextarea.value = data.script.map(item => `${item.time}: ${item.description}`).join('\n');
+                                    videoPlayer.src = uploadResponseData.video_url;
+
+                                    showSection(scriptSection);
+                                    showSection(videoPlaybackSection);
+                                    if (generateSpeechBtn) generateSpeechBtn.disabled = false;
+                                    es.close();
+                                } else if (data.status === 'error') {
+                                    updateProgressBar(analysisProgressBar, analysisProgressText, 0, data.message);
+                                    uploadMessage.className = 'message error';
+                                    uploadMessage.textContent = data.message || 'Video analysis failed.';
+                                    resetUI();
+                                    es.close();
+                                }
+                            };
+
+                            es.onerror = (error) => {
+                                console.error('EventSource for analysis failed:', error);
+                                updateProgressBar(analysisProgressBar, analysisProgressText, 0, 'Analysis failed due to connection error.');
+                                uploadMessage.className = 'message error';
+                                uploadMessage.textContent = 'Video analysis failed due to connection error.';
+                                resetUI();
+                                if (es) es.close(); // Ensure EventSource is closed
+                            };
+
+                        } else {
+                            uploadMessage.className = 'message error';
+                            uploadMessage.textContent = uploadResponseData.error || 'Failed to get analysis stream.';
+                            resetUI();
+                            console.error('Upload failed with server response:', uploadResponseData);
+                        }
+                    } else {
+                        // Handle non-200 responses from the initial upload POST
+                        uploadMessage.className = 'message error';
+                        uploadMessage.textContent = `Server error during upload: ${xhr.statusText}`;
+                        resetUI();
+                        console.error('XHR Upload Error:', xhr.status, xhr.statusText);
+                    }
+                    setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
+                    console.log('Upload process finished (XHR).');
+                };
+
+                xhr.onerror = function() {
                     uploadMessage.className = 'message error';
-                    uploadMessage.textContent = data.error || 'Failed to upload video.';
+                    uploadMessage.textContent = `Network error during XHR upload.`;
                     resetUI();
-                    console.error('Upload failed with server response:', data); // Debugging log
-                }
+                    console.error('XHR Network Error.');
+                    setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
+                };
+
+                xhr.send(formData);
+
+
             } catch (error) {
+                // This catch block is for errors occurring *before* xhr.send() or synchronous errors during setup.
                 uploadMessage.className = 'message error';
-                uploadMessage.textContent = `Network error: ${error.message}`;
+                uploadMessage.textContent = `General error during upload/analysis setup: ${error.message}`;
                 resetUI();
-                console.error('Network error during upload:', error); // Debugging log
-            } finally {
+                console.error('General error during setup:', error);
                 setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
-                console.log('Upload process finished.'); // Debugging log
             }
         });
     } else {
@@ -219,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 2. Generate Speech
-    // Check if generateSpeechBtn exists before adding event listener
     if (generateSpeechBtn) {
         generateSpeechBtn.addEventListener('click', async () => {
             const scriptText = scriptTextarea.value;
@@ -228,11 +289,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 speechMessage.textContent = 'Script cannot be empty.';
                 return;
             }
-            
+
             setProcessingState(generateSpeechBtn, speechMessage, true, 'Generating Speech...');
-            showSection(speechSection); // Show speech section
-            if (audioPlayer) audioPlayer.src = ''; // Clear previous audio
-            
+            showSection(speechSection);
+            if (audioPlayer) audioPlayer.src = '';
+
             try {
                 const es = new EventSource('/generate_speech');
                 es.onmessage = (event) => {
@@ -280,11 +341,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 3. Merge Video and Audio
-    // Check if mergeBtn exists before adding event listener
     if (mergeBtn) {
         mergeBtn.addEventListener('click', async () => {
             setProcessingState(mergeBtn, statusMessage, true, 'Merging Video...');
-            showSection(mergeSection); // Ensure progress bar container is visible
+            showSection(mergeSection);
             updateProgressBar(mergeProgressBar, mergeProgressText, 0, 'Starting merge...');
 
             try {
@@ -330,12 +390,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 4. Check Merged Video (Play)
-    // Check if checkMergedVideoBtn exists before adding event listener
     if (checkMergedVideoBtn) {
         checkMergedVideoBtn.addEventListener('click', () => {
             if (mergedVideoPlayer && mergedVideoPlayer.src) {
                 mergedVideoPlayer.play();
-                // Show the YouTube upload section after playing the merged video for confirmation
                 showSection(youtubeUploadDetailsSection);
                 if (youtubeUploadBtn) youtubeUploadBtn.disabled = false;
                 statusMessage.textContent = "Review the merged video. If it looks good, you can proceed to YouTube upload.";
@@ -351,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 5. Upload to YouTube
-    // Check if youtubeUploadBtn exists before adding event listener
     if (youtubeUploadBtn) {
         youtubeUploadBtn.addEventListener('click', async () => {
             const title = youtubeTitle.value.trim();
@@ -364,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             setProcessingState(youtubeUploadBtn, statusMessage, true, 'Uploading to YouTube...');
-            showSection(youtubeUploadSection); // Show upload progress bar container
+            showSection(youtubeUploadSection);
             updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, 'Starting YouTube upload...');
 
             try {
@@ -378,9 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         statusMessage.className = 'message success';
                         statusMessage.textContent = data.message;
                         es.close();
-                        // Optionally clean up files after successful upload
                         fetch('/cleanup_files', { method: 'POST' });
-                        // Provide a link to the uploaded video if the real API returned it
                     } else if (data.status === 'error') {
                         updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, data.message);
                         statusMessage.className = 'message error';
