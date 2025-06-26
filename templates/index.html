@@ -36,10 +36,25 @@
         <h2>Original Video Preview</h2>
         <video id="videoPlayer" controls></video>
 
-        <!-- NEW: Audio player section under the video -->
+        <!-- Audio player will sit under the video, within this box -->
         <section id="scriptAudioSection" class="hidden audio-section display-box-inner">
             <h3>Generated Audio</h3>
             <audio id="audioPlayer" controls></audio>
+        </section>
+
+        <!-- NEW: Merged Video Preview section, now placed here -->
+        <section id="mergeSection" class="hidden display-box-inner">
+            <h3>Merged Narrated Video</h3>
+            <video id="mergedVideoPlayer" controls></video>
+            <div class="button-group">
+                <button id="playMergedVideoBtn">Play Merged Video</button>
+                <a id="downloadMergedVideoBtn" class="button" download>Download Merged Video</a>
+            </div>
+            <div id="mergeStatusMessage" class="message"></div>
+            <div id="mergeProgressBarContainer" class="progress-container hidden">
+                <div id="mergeProgressBar" class="progress-bar">0%</div>
+                <div id="mergeProgressText" class="progress-text"></div>
+            </div>
         </section>
     </section>
 
@@ -47,7 +62,7 @@
     <section id="scriptSection" class="hidden display-box display-half">
         <h2>2. Generated Script</h2>
         <label for="scriptText">Review and edit the generated script:</label>
-        <textarea id="scriptText" rows="10" placeholder="Script will appear here after video analysis..."></textarea>
+        <textarea id="scriptTextarea" rows="10" placeholder="Script will appear here after video analysis..."></textarea>
         <div id="speechMessage" class="message"></div>
 
         <!-- Button for Convert Script to Speech, centered below text area -->
@@ -59,27 +74,11 @@
     </section>
 </div>
 
-<!-- The merge/check/youtube sections remain below the main display area -->
-<section id="mergeSection" class="hidden">
-    <h2>3. Merge Video & Audio</h2>
-    <button id="mergeBtn" disabled>Merge Video and Speech</button>
-    <div id="statusMessage" class="message"></div>
-    <div id="mergeProgressBarContainer" class="progress-container hidden">
-        <div id="mergeProgressBar" class="progress-bar">0%</div>
-        <div id="mergeProgressText" class="progress-text"></div>
-    </div>
-</section>
-
-<section id="mergedVideoPlaybackSection" class="hidden merged-video-section">
-    <h2>4. Check Merged Video</h2>
-    <video id="mergedVideoPlayer" controls></video>
-    <div class="button-group">
-        <button id="checkMergedVideoBtn" disabled>Play Merged Video</button>
-    </div>
-</section>
+<!-- The old mergeSection is now integrated, so this is removed -->
+<!-- <section id="mergeSection" class="hidden display-box slide-in-section"> ... </section> -->
 
 <section id="youtubeUploadDetailsSection" class="hidden youtube-upload-section">
-    <h2>5. Upload to YouTube</h2>
+    <h2>4. Upload to YouTube</h2>
     <label for="youtubeTitle">Video Title:</label>
     <input type="text" id="youtubeTitle" placeholder="Enter video title..." required>
 

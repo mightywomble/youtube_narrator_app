@@ -57,7 +57,7 @@ textarea {
     resize: vertical;
 }
 
-button {
+button, .button { /* Apply button styles to .button class for anchor tags */
     background-color: #007bff;
     color: white;
     padding: 12px 25px;
@@ -69,21 +69,25 @@ button {
     transition: background-color 0.3s ease, transform 0.2s ease;
     margin-right: 10px;
     margin-bottom: 10px;
+    text-decoration: none; /* For anchor tags */
+    display: inline-block; /* For anchor tags */
+    text-align: center; /* For anchor tags */
 }
 
-button:hover {
+button:hover, .button:hover {
     background-color: #0056b3;
     transform: translateY(-2px);
 }
 
-button:active {
+button:active, .button:active {
     transform: translateY(0);
 }
 
-button:disabled {
+button:disabled, .button.disabled { /* Style for disabled anchor buttons */
     background-color: #cccccc;
     cursor: not-allowed;
     transform: none;
+    pointer-events: none; /* Disable click events for anchor tags */
 }
 
 .button-group {
@@ -205,7 +209,7 @@ textarea {
     box-sizing: border-box; /* Include padding/border in width */
 }
 
-/* NEW: Styling for the inner audio display box */
+/* Styling for the inner audio display box */
 .display-box-inner {
     background-color: #f5f5f5; /* Slightly different background for inner box */
     padding: 15px;
@@ -232,7 +236,7 @@ textarea {
     margin: 0; /* Remove default audio margins */
 }
 
-/* NEW: Green button style */
+/* Green button style */
 .green-button {
     background-color: #28a745; /* Green color */
 }
@@ -245,6 +249,19 @@ textarea {
     background-color: #cccccc;
 }
 
+/* Slide-in animation for sections (like mergeSection) */
+/* Removed fixed positioning as mergeSection is now an inner box */
+.slide-in-section {
+    /* Removed: transform, opacity, transition, position, top, left, width, height, z-index, background-color */
+    /* It will now be hidden/shown by display: none/flex */
+    /* The slide-in effect will be handled by JavaScript manipulating its visibility and potentially a class */
+}
+
+/* Ensure sections are not fixed position by default if not sliding */
+/* This rule is now less critical as .slide-in-section is no longer fixed */
+section:not(.slide-in-section) {
+    position: relative; /* Reset position for other sections */
+}
 
 audio {
     width: 100%;
@@ -338,6 +355,10 @@ audio {
         margin-right: 0;
         margin-bottom: 10px;
     }
+    /* Removed fixed positioning for slide-in on small screens too */
+    /* .slide-in-section {
+        position: absolute;
+    } */
 }
 
 /* Loading spinner */
@@ -363,3 +384,4 @@ audio {
     display: inline-block;
     vertical-align: middle;
 }
+

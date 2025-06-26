@@ -6,6 +6,7 @@ from moviepy.editor import VideoFileClip # Still needed for audio properties
 import json
 import time
 from flask import session # Import session if needed for context, but not for direct script storage
+import shutil # For robust directory removal
 
 # Configure Google Generative AI with the API key
 def configure_gemini(api_key):
@@ -60,8 +61,9 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
         gemini_api_key (str): The Gemini API key to use for authentication.
 
     Yields:
-        dict: Progress updates for the frontend (status, progress, message),
-              or a special dict containing 'final_script_data'.
+        dict: Progress updates for the frontend (status, progress, message).
+    Returns:
+        list: The final synthesized script content.
     """
 
     if not gemini_api_key:
@@ -75,7 +77,7 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
     yield {"status": "in_progress", "progress": 5, "message": "Analysis: Initializing upload to Gemini..."}
 
     uploaded_file = None
-    synthesized_script_content = []
+    synthesized_script_content = [] # Initialize as empty list to ensure it's always a list
 
     try:
         import mimetypes
@@ -92,9 +94,10 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
         active_uploaded_file = wait_for_file_active(uploaded_file)
         yield {"status": "in_progress", "progress": 60, "message": "Analysis: File ready. Sending to model..."}
 
+        # UPDATED PROMPT for narrative description
         prompt_parts = [
             active_uploaded_file,
-            "Analyse the attached video and create a script based on the timings in the video explaining what is happening in the video. Format the output as a list of timestamped descriptions. Example: '00:05 - A person enters the room. 00:10 - They sit at a desk.' Ensure all significant events throughout the entire video are captured with accurate timestamps."
+            "Analyze the attached video and provide a continuous, fluid narrative description of what is happening throughout the video. Focus on key actions, subjects, and the environment. Do not include explicit timestamps or bullet points. Describe the flow of events as if you are a narrator speaking about the video."
         ]
 
         print("Sending analysis request to Gemini...")
@@ -103,34 +106,16 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
         print("Gemini analysis complete.")
         yield {"status": "in_progress", "progress": 90, "message": "Analysis: Model response received. Parsing script..."}
 
-        for line in synthesized_text.split('\n'):
-            line = line.strip()
-            if line and len(line) > 5 and line[2] == ':' and line[5] == ' ':
-                parts = line.split(' - ', 1)
-                if len(parts) == 2:
-                    synthesized_script_content.append({
-                        "time": parts[0].strip(),
-                        "description": parts[1].strip()
-                    })
-                else:
-                     synthesized_script_content.append({
-                        "time": "",
-                        "description": line
-                    })
-            elif line:
-                 synthesized_script_content.append({
-                    "time": "",
-                    "description": line
-                })
-
-        # Instead of storing in session directly, yield it as a special final message
-        yield {"final_script_data": synthesized_script_content}
+        # For narrative output, we'll store it as a single item in the list
+        synthesized_script_content = [{"time": "Narrative", "description": synthesized_text.strip()}]
 
     except Exception as e:
         print(f"Error during Gemini video analysis: {e}")
         error_message = f"Video analysis failed: {str(e)}"
+        # Ensure synthesized_script_content is still a list, even on error
+        synthesized_script_content = [{"time": "Error", "description": error_message + " Please check your Gemini API key and try again."}]
         yield {"status": "error", "progress": 0, "message": error_message}
-    finally:
+    finally: # Moved finally block to ensure cleanup
         if uploaded_file:
             try:
                 genai.delete_file(uploaded_file.name)
@@ -138,13 +123,12 @@ def analyze_video_with_openai(video_path, temp_output_dir, gemini_api_key):
             except Exception as e:
                 print(f"Error cleaning up Gemini uploaded file {uploaded_file.name}: {e}")
 
-        try:
-            os.rmdir(temp_output_dir)
-        except OSError as e:
-            if "Directory not empty" in str(e):
-                print(f"Warning: Could not remove temporary directory {temp_output_dir}: {e}. It might not be empty from prior runs.")
-            else:
+        if os.path.exists(temp_output_dir): # Check if directory exists before trying to remove
+            try:
+                shutil.rmtree(temp_output_dir, ignore_errors=True) # Use rmtree for non-empty dirs
+                print(f"Cleaned up temporary directory: {temp_output_dir}")
+            except Exception as e:
                 print(f"Error removing temporary directory {temp_output_dir}: {e}")
 
-    # This final yield is no longer needed here, as final_script_data is yielded above.
-    # The 'complete' status will be sent by main_routes.py after receiving final_script_data.
+    # This function now RETURNS the script content, it does not yield it as a special dict.
+    return synthesized_script_content

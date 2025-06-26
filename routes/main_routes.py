@@ -105,22 +105,27 @@ def stream_analysis_progress():
 
                 analysis_generator_obj = analyze_video_with_openai(video_path, temp_output_dir, gemini_key)
 
-                script_data_returned = []
+                script_data_returned = None # Initialize to None to differentiate from empty list
                 while True: # Loop through the generator to get progress and capture return value
                     try:
                         progress_update = next(analysis_generator_obj)
-                        # Check if this is the special final script data
-                        if isinstance(progress_update, dict) and 'final_script_data' in progress_update:
-                            script_data_returned = progress_update['final_script_data'] # Capture the script
-                            # Don't yield this special data, it's for internal transfer
-                            continue
-                        else:
-                            yield f"data: {json.dumps(progress_update)}\n\n" # Yield regular progress updates
+                        # The analyze_video_with_openai service now RETURNS the script, it does not yield it.
+                        # So, this 'if isinstance(progress_update, dict) and 'final_script_data' in progress_update:'
+                        # block should theoretically not be hit for the final script.
+                        # It will only yield progress updates.
+                        yield f"data: {json.dumps(progress_update)}\n\n" # Yield regular progress updates
                     except StopIteration as e:
-                        # If StopIteration contains a value, it's the return value of the generator
-                        if e.value is not None:
-                            script_data_returned = e.value # Capture the return value (final script)
+                        script_data_returned = e.value # Capture the return value of the generator
                         break # Exit loop
+
+                # --- Debugging Log ---
+                current_app.logger.debug(f"Analysis Generator returned: {script_data_returned}, type: {type(script_data_returned)}")
+                # --- End Debugging Log ---
+
+                # Ensure script_data_returned is a list, even if analysis returned None or unexpected
+                if not isinstance(script_data_returned, list):
+                    current_app.logger.warning(f"analyze_video_with_openai did not return a list for script data. Received type: {type(script_data_returned)}, value: {script_data_returned}")
+                    script_data_returned = [] # Default to empty list to prevent frontend .map() error
 
                 final_script_for_session = script_data_returned # Store in nonlocal variable
                 session['script'] = final_script_for_session # Store in session here
@@ -134,13 +139,8 @@ def stream_analysis_progress():
                 current_app.logger.error(error_message, exc_info=True)
                 yield f"data: {json.dumps({'status': 'error', 'message': error_message})}\n\n"
             finally:
-                try:
-                    os.rmdir(temp_output_dir)
-                except OSError as e:
-                    if "Directory not empty" in str(e):
-                        current_app.logger.warning(f"Warning: Could not remove temporary directory {temp_output_dir}: {e}. It might not be empty from prior runs.")
-                    else:
-                        current_app.logger.error(f"Error removing temporary directory {temp_output_dir}: {e}")
+                # Cleanup of temp_output_dir is handled in video_analysis.py's finally block now.
+                pass # No need for cleanup here, it's in the service.
 
     return Response(generate_analysis_stream(), mimetype='text/event-stream')
 
@@ -183,10 +183,10 @@ def generate_speech():
                     progress_info = next(tts_generator)
                     # For this blocking route, we don't stream intermediate progress to frontend,
                     # but we can log them if needed.
-                    print(f"TTS Service Progress (Internal): {json.loads(progress_info.strip('data: ')).get('message')}")
+                    current_app.logger.debug(f"TTS Service Progress (Internal): {json.loads(progress_info.strip('data: ')).get('message')}")
                 except StopIteration as e:
                     final_audio_path_data = e.value # Capture the return value (the final audio path)
-                    break # Exit loop when generator is exhausted
+                    break # Exit loop
 
             # After the generator completes and returns, store the audio path in session
             session['audio_path'] = final_audio_path_data
@@ -203,7 +203,7 @@ def generate_speech():
             return jsonify({'error': f'Speech generation failed: {str(e)}'}), 500
 
 
-@main_bp.route('/merge_video_audio', methods=['POST'])
+@main_bp.route('/merge_video_audio', methods=['GET']) # Changed method to GET
 def merge_video_audio_route():
     """Merges the uploaded video and generated audio."""
     video_path = session.get('video_path')
@@ -217,26 +217,40 @@ def merge_video_audio_route():
     merged_filename = str(uuid.uuid4()) + "_merged.mp4"
     merged_video_path = os.path.join(current_app.config['UPLOAD_FOLDER'], merged_filename)
 
-    try:
-        # Use a generator to stream progress updates
-        def progress_generator():
-            yield "data: {'status': 'in_progress', 'message': 'Starting video-audio merge...'}\n\n"
-            for progress_info in merge_video_audio(video_path, audio_path, merged_video_path):
-                yield f"data: {progress_info}\n\n"
+    app = current_app._get_current_object() # Get the real app object for context
 
-            session['merged_video_path'] = merged_video_path # Store merged video path
-            yield "data: {'status': 'complete', 'message': 'Merge complete!', 'merged_video_url': '" + f'/static/uploads/{merged_filename}' + "'}\n\n"
+    def progress_generator():
+        # Push request context for session access within the generator
+        with app.test_request_context():
+            try:
+                yield "data: {'status': 'in_progress', 'message': 'Starting video-audio merge...'}\n\n"
 
-        return Response(progress_generator(), mimetype='text/event-stream')
+                # Execute the merge_video_audio service. It yields progress and returns the final path.
+                merge_generator_obj = merge_video_audio(video_path, audio_path, merged_video_path)
 
-    except Exception as e:
-        current_app.logger.error(f"Video merging failed: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Video merging failed: {str(e)}'}), 500
+                final_merged_video_path = None
+                while True: # Loop through the generator to get progress and capture return value
+                    try:
+                        progress_info = next(merge_generator_obj)
+                        yield f"data: {json.dumps(progress_info)}\n\n" # Yield progress updates
+                    except StopIteration as e:
+                        final_merged_video_path = e.value # Capture the return value (the final merged video path)
+                        break # Exit loop
+
+                session['merged_video_path'] = final_merged_video_path # Store merged video path in session
+                yield f"data: {json.dumps({'status': 'complete', 'message': 'Merge complete!', 'merged_video_url': f'/static/uploads/{os.path.basename(final_merged_video_path)}'})}\n\n"
+
+            except Exception as e:
+                current_app.logger.error(f"Video merging failed within generator: {str(e)}", exc_info=True)
+                yield f"data: {json.dumps({'status': 'error', 'message': f'Video merging failed: {str(e)}'})}\n\n"
+
+    return Response(progress_generator(), mimetype='text/event-stream')
 
 
 @main_bp.route('/upload_to_youtube', methods=['POST'])
 def upload_to_youtube_route():
     """Initiates the YouTube video upload."""
+    # These are retrieved from the session outside the generator, which is fine
     merged_video_path = session.get('merged_video_path')
     video_title = request.json.get('video_title', 'My AI Generated Video')
     video_description = request.json.get('video_description', 'A video generated with AI narration.')
@@ -244,20 +258,26 @@ def upload_to_youtube_route():
     if not merged_video_path or not os.path.exists(merged_video_path):
         return jsonify({'error': 'Merged video not found. Please merge first.'}), 400
 
-    # In a real app, you'd handle YouTube OAuth here or retrieve a stored token
-    # For now, this is a placeholder function in youtube_api.py
+    app = current_app._get_current_object() # Get the real app object for context
+
     try:
         def youtube_upload_progress():
-            yield "data: {'status': 'in_progress', 'message': 'Starting YouTube upload...'}\n\n"
-            # This function will yield progress messages
-            for progress_info in upload_video_to_youtube(merged_video_path, video_title, video_description):
-                yield f"data: {progress_info}\n\n"
-            yield "data: {'status': 'complete', 'message': 'Upload to YouTube complete!'}\n\n"
+            with app.test_request_context(): # Push request context for session access if needed in the future
+                try:
+                    yield "data: {'status': 'in_progress', 'message': 'Starting YouTube upload...'}\n\n"
+                    # This function will yield progress messages
+                    for progress_info in upload_video_to_youtube(merged_video_path, video_title, video_description):
+                        yield f"data: {progress_info}\n\n"
+                    yield "data: {'status': 'complete', 'message': 'Upload to YouTube complete!'}\n\n"
+                except Exception as e:
+                    current_app.logger.error(f"YouTube upload failed within generator: {str(e)}", exc_info=True)
+                    yield f"data: {json.dumps({'status': 'error', 'message': f'YouTube upload failed: {str(e)}'})}\n\n"
 
         return Response(youtube_upload_progress(), mimetype='text/event-stream')
 
     except Exception as e:
-        current_app.logger.error(f"YouTube upload failed: {str(e)}", exc_info=True)
+        # This catch is for errors BEFORE the generator starts yielding
+        current_app.logger.error(f"YouTube upload failed before generator: {str(e)}", exc_info=True)
         return jsonify({'error': f'YouTube upload failed: {str(e)}'}), 500
 
 @main_bp.route('/cleanup_files', methods=['POST'])
@@ -280,4 +300,3 @@ def cleanup_files():
                 current_app.logger.error(f"Error cleaning up file {f_path}: {e}", exc_info=True)
 
     return jsonify({'message': f'Cleaned up {removed_count} temporary files.'})
-
