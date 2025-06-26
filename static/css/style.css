@@ -135,8 +135,7 @@ button:disabled {
 /* Updated: Styles for the main display area (video + script side-by-side) */
 .main-display-area {
     display: flex;
-    /* Use flex-wrap to ensure responsiveness on smaller screens */
-    flex-wrap: wrap;
+    flex-wrap: wrap; /* Allows items to wrap on smaller screens */
     gap: 20px; /* Space between the two top boxes */
     width: 100%;
     max-width: 900px; /* Match container width */
@@ -158,11 +157,10 @@ button:disabled {
     align-items: center; /* Center content horizontally within the box */
 }
 
-/* NEW: Styling for equal halves in the main display area */
+/* Styling for equal halves in the main display area */
 .display-half {
     flex: 1; /* Both take equal space */
     min-width: 300px; /* Minimum width before wrapping */
-    /* No explicit width, flex handles it */
 }
 
 /* Specific adjustments for video and textarea */
@@ -180,25 +178,72 @@ textarea {
     flex-grow: 1; /* Allow textarea to take available vertical space */
 }
 
-/* NEW: Wrapper to center the button below the textarea within the script box */
+/* Wrapper to center the button below the textarea within the script box */
 .button-center-wrapper {
     width: 100%;
     display: flex;
-    justify-content: center; /* Centers the button horizontally */
+    flex-direction: column; /* Stack button and message box vertically */
+    align-items: center; /* Center items horizontally */
     margin-top: 20px; /* Space above the button */
 }
 
 /* Adjust button inside the button-center-wrapper */
 .button-center-wrapper button {
     margin: 0; /* Override default button margins */
+    width: auto; /* Allow button to size naturally */
+    min-width: 180px; /* Ensure a consistent minimum width for the button */
 }
 
-/* The button-panel-box and video-display-box specific styles are now replaced by display-half */
-/* Remove these if they were leftover and causing issues: */
-/* .video-display-box { ... } */
-/* .button-panel-box { ... } */
-/* .button-panel-content { ... } */
-/* .button-panel-box button { ... } */
+/* Style for the speech feedback box */
+.speech-feedback-box {
+    width: 100%; /* Match parent container width */
+    max-width: 250px; /* Max width to match button roughly (adjust as needed) */
+    padding: 10px;
+    margin-top: 10px; /* Space below the button */
+    font-size: 0.9em;
+    text-align: center;
+    box-sizing: border-box; /* Include padding/border in width */
+}
+
+/* NEW: Styling for the inner audio display box */
+.display-box-inner {
+    background-color: #f5f5f5; /* Slightly different background for inner box */
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05); /* Inner shadow */
+    border: 1px solid #d0d0d0;
+    width: 100%; /* Make it span the width of its parent display-box */
+    box-sizing: border-box;
+    margin-top: 20px; /* Space from the video above it */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.display-box-inner h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #444;
+}
+
+.display-box-inner audio {
+    width: 100%;
+    max-width: 400px; /* Constrain audio player width */
+    margin: 0; /* Remove default audio margins */
+}
+
+/* NEW: Green button style */
+.green-button {
+    background-color: #28a745; /* Green color */
+}
+
+.green-button:hover {
+    background-color: #218838; /* Darker green on hover */
+}
+
+.green-button:disabled {
+    background-color: #cccccc;
+}
 
 
 audio {

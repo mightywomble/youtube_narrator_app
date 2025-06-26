@@ -1,62 +1,72 @@
 import os
 import json
-import base64
-import requests
-import time # For simulation of work
-
-# Base URL for Gemini API (adjust if needed, but this is standard for gemini-2.0-flash)
-# Note: In a Flask backend, you would typically use a library like `google-generativeai`
-# or `requests` directly with the correct authentication.
-# The `apiKey = ""` pattern is specific to the Canvas frontend environment.
-# For Flask, you'd load a Gemini API key from environment variables if you were using Google's generativeai Python client.
-# For simplicity, and since a direct Gemini TTS API wasn't explicitly integrated in boilerplate,
-# we'll continue with the simulation as before. If you need real Gemini TTS, that's a separate integration.
-
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+import time
+from elevenlabs import Voice, VoiceSettings, save # Keep Voice, VoiceSettings, save
+from elevenlabs.client import ElevenLabs # Import the client
+from flask import current_app # To access Flask's app config
 
 def convert_text_to_speech_gemini(text_script, output_audio_path):
     """
-    Simulates converting a given text script into natural language speech
-    and saves it as an MP3 file.
-    
+    Converts a given text script into natural language speech using ElevenLabs Text-to-Speech.
+
     Args:
         text_script (str): The text content to convert to speech.
-        output_audio_path (str): The full path where the generated audio file will be saved.
+        output_audio_path (str): The full path where the generated audio file will be saved (e.g., .mp3).
 
     Yields:
         str: JSON string indicating progress or completion for SSE.
+    Returns:
+        str: The path to the saved audio file on success.
     """
-    
-    # --- Simulate text-to-speech process ---
-    total_steps = 10
-    for i in range(total_steps):
-        progress_percentage = int(((i + 1) / total_steps) * 100)
-        message = f"Synthesizing audio: {progress_percentage}% complete..."
-        yield json.dumps({'status': 'in_progress', 'progress': progress_percentage, 'message': message})
-        time.sleep(0.5) # Simulate work
 
-    # Create a dummy audio file for demonstration
-    # In a real scenario, you'd get actual audio data from a TTS API
+    elevenlabs_api_key = current_app.config.get('ELEVENLABS_API_KEY')
+    if not elevenlabs_api_key:
+        raise ValueError("ElevenLabs API Key is not configured. Please set it in settings.")
+
+    # Initialize the ElevenLabs client by passing the API key directly
+    client = ElevenLabs(api_key=elevenlabs_api_key)
+
+    voice_id_to_use = "pNInz6obpgDQGcFmaJgB" # Voice ID for Adam (male voice)
+
+    print("Starting ElevenLabs Text-to-Speech synthesis...")
+    yield json.dumps({'status': 'in_progress', 'progress': 10, 'message': 'Speech: Sending text to ElevenLabs API...'})
+
     try:
-        # Dummy audio content
-        dummy_audio_content = b"This is a dummy audio file. Replace with actual TTS output."
-        with open(output_audio_path, "wb") as f:
-            f.write(dummy_audio_content)
-        
-        # If you were to use a real TTS API (e.g., Google Cloud Text-to-Speech Python client):
-        # from google.cloud import texttospeech
-        # client = texttospeech.TextToSpeechClient()
-        # synthesis_input = texttospeech.SynthesisInput(text=text_script)
-        # voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
-        # audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        # response = client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
-        # with open(output_audio_path, "wb") as out:
-        #     out.write(response.audio_content)
-        #     print(f'Audio content written to "{output_audio_path}"')
+        # Generate audio using the client instance.
+        # This returns a generator, even without stream=True, in some versions.
+        audio_generator = client.generate(
+            text=text_script,
+            voice=Voice(voice_id=voice_id_to_use,
+                        settings=VoiceSettings(stability=0.75, similarity_boost=0.75, style=0.0, use_speaker_boost=True)),
+            model="eleven_multilingual_v2" # Recommended model for general use
+        )
+
+        # Collect all chunks from the generator into a single bytes object
+        full_audio_bytes = b''
+        for chunk in audio_generator:
+            full_audio_bytes += chunk
+            # Optional: yield progress based on chunks received
+            # (Requires knowing total expected chunks which is not directly provided by ElevenLabs)
+
+        yield json.dumps({'status': 'in_progress', 'progress': 70, 'message': 'Speech: Audio received. Saving file...'})
+
+        # Save the complete bytes object to the specified file path
+        save(full_audio_bytes, output_audio_path)
+        print(f"Audio content written to '{output_audio_path}'")
+
+        yield json.dumps({'status': 'in_progress', 'progress': 100, 'message': 'Speech: File saved.'})
 
     except Exception as e:
-        print(f"Error creating dummy audio file: {e}")
-        raise
+        print(f"Error during ElevenLabs Text-to-Speech synthesis: {e}")
+        # ElevenLabs specific error handling might involve checking error codes
+        if "rate limit" in str(e).lower():
+            raise ValueError("ElevenLabs API rate limit exceeded. Please try again later.")
+        elif "invalid api key" in str(e).lower() or "authentication" in str(e).lower():
+            raise ValueError("Invalid or unauthorized ElevenLabs API Key. Please check your settings.")
+        else:
+            raise # Re-raise the general exception for Flask to catch
 
-    yield json.dumps({'status': 'complete', 'message': 'Speech generation complete.'})
+    # IMPORTANT: Return the audio path instead of yielding a final status message
+    # This value will be captured by the `StopIteration` in the calling function.
+    return output_audio_path
 

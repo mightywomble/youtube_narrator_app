@@ -85,15 +85,15 @@ def stream_analysis_progress():
     # Get the application instance to push context (if needed for things other than current_app.logger)
     app = current_app._get_current_object() # Get the real app object from the proxy
 
-    final_script_for_return = [] # To capture the script within the generator
+    final_script_for_session = [] # To capture the script returned by the analysis generator
 
-    def stream_wrapper_with_context_and_capture():
-        nonlocal final_script_for_return # To modify this variable
+    # Define the generator function here, right before it's used
+    def generate_analysis_stream():
+        nonlocal final_script_for_session # To modify this variable
 
         # Create a temporary request context for the duration of the generator
         with app.test_request_context():
             try:
-                # All existing code from original generate_progress_stream goes here
                 temp_output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'temp_analysis_' + str(uuid.uuid4()))
                 os.makedirs(temp_output_dir, exist_ok=True)
 
@@ -105,16 +105,27 @@ def stream_analysis_progress():
 
                 analysis_generator_obj = analyze_video_with_openai(video_path, temp_output_dir, gemini_key)
 
-                for progress_update in analysis_generator_obj:
-                    if isinstance(progress_update, dict) and 'final_script_data' in progress_update:
-                        final_script_for_return = progress_update['final_script_data'] # Capture the script here
-                        # Store in session now, within the test_request_context
-                        session['script'] = final_script_for_return
-                        yield f"data: {json.dumps({'status': 'in_progress', 'progress': 100, 'message': 'Analysis: Script parsing complete.'})}\n\n"
-                    else:
-                        yield f"data: {json.dumps(progress_update)}\n\n"
+                script_data_returned = []
+                while True: # Loop through the generator to get progress and capture return value
+                    try:
+                        progress_update = next(analysis_generator_obj)
+                        # Check if this is the special final script data
+                        if isinstance(progress_update, dict) and 'final_script_data' in progress_update:
+                            script_data_returned = progress_update['final_script_data'] # Capture the script
+                            # Don't yield this special data, it's for internal transfer
+                            continue
+                        else:
+                            yield f"data: {json.dumps(progress_update)}\n\n" # Yield regular progress updates
+                    except StopIteration as e:
+                        # If StopIteration contains a value, it's the return value of the generator
+                        if e.value is not None:
+                            script_data_returned = e.value # Capture the return value (final script)
+                        break # Exit loop
 
-                yield f"data: {json.dumps({'status': 'complete', 'message': 'Analysis: Complete!', 'script': final_script_for_return})}\n\n"
+                final_script_for_session = script_data_returned # Store in nonlocal variable
+                session['script'] = final_script_for_session # Store in session here
+
+                yield f"data: {json.dumps({'status': 'complete', 'message': 'Analysis: Complete!', 'script': final_script_for_session})}\n\n"
 
             except Exception as e:
                 error_message = f"Video analysis failed: {str(e)}"
@@ -131,12 +142,17 @@ def stream_analysis_progress():
                     else:
                         current_app.logger.error(f"Error removing temporary directory {temp_output_dir}: {e}")
 
-    return Response(stream_wrapper_with_context_and_capture(), mimetype='text/event-stream')
+    return Response(generate_analysis_stream(), mimetype='text/event-stream')
 
 
 @main_bp.route('/generate_speech', methods=['POST'])
 def generate_speech():
-    """Converts the provided script text to speech."""
+    """
+    Converts the provided script text to speech.
+    This route will now execute the TTS generation fully and then return a JSON response
+    with the final status and audio URL.
+    Progress updates will be less granular (only start/complete from Flask's perspective).
+    """
     script_text = request.json.get('script_text')
     if not script_text:
         return jsonify({'error': 'No script text provided'}), 400
@@ -145,28 +161,47 @@ def generate_speech():
     if not video_path or not os.path.exists(video_path):
         return jsonify({'error': 'Original video not found. Please upload again.'}), 400
 
+    # Get the application instance to push context (required for session access and current_app.config)
+    app = current_app._get_current_object()
+
     # Generate a unique filename for the audio
     audio_filename = str(uuid.uuid4()) + ".mp3"
     audio_path = os.path.join(current_app.config['UPLOAD_FOLDER'], audio_filename)
 
-    try:
-        def generate():
-            yield "data: {'status': 'in_progress', 'message': 'Starting speech generation...'}\n\n"
+    with app.app_context(): # Ensure application context for current_app.config and session access
+        try:
+            print("Starting speech generation (server-side, blocking process)...")
 
-            # This is where the Gemini API call would happen from the backend.
-            # For this example, we will make a dummy call to the service.
-            # The prompt in audio_synthesis.py will ensure the Gemini call works.
-            for progress_info in convert_text_to_speech_gemini(script_text, audio_path):
-                yield f"data: {progress_info}\n\n"
+            # Execute the convert_text_to_speech_gemini generator fully to get the final audio path
+            tts_generator = convert_text_to_speech_gemini(script_text, audio_path)
 
-            session['audio_path'] = audio_path # Store audio path in session
-            yield "data: {'status': 'complete', 'message': 'Speech generation complete!', 'audio_url': '" + f'/static/uploads/{audio_filename}' + "'}\n\n"
+            final_audio_path_data = None
+            # Iterate through the generator to execute it and capture its return value
+            while True:
+                try:
+                    # Next call will execute up to the next yield or the return
+                    progress_info = next(tts_generator)
+                    # For this blocking route, we don't stream intermediate progress to frontend,
+                    # but we can log them if needed.
+                    print(f"TTS Service Progress (Internal): {json.loads(progress_info.strip('data: ')).get('message')}")
+                except StopIteration as e:
+                    final_audio_path_data = e.value # Capture the return value (the final audio path)
+                    break # Exit loop when generator is exhausted
 
-        return Response(generate(), mimetype='text/event-stream')
+            # After the generator completes and returns, store the audio path in session
+            session['audio_path'] = final_audio_path_data
 
-    except Exception as e:
-        current_app.logger.error(f"Speech generation failed: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Speech generation failed: {str(e)}'}), 500
+            # Return the final JSON response
+            return jsonify({
+                'status': 'complete',
+                'message': 'Speech generation complete!',
+                'audio_url': f'/static/uploads/{os.path.basename(final_audio_path_data)}'
+            })
+
+        except Exception as e:
+            current_app.logger.error(f"Speech generation failed: {str(e)}", exc_info=True)
+            return jsonify({'error': f'Speech generation failed: {str(e)}'}), 500
+
 
 @main_bp.route('/merge_video_audio', methods=['POST'])
 def merge_video_audio_route():
@@ -241,7 +276,6 @@ def cleanup_files():
         if f_path and os.path.exists(f_path):
             try:
                 os.remove(f_path)
-                removed_count += 1
             except Exception as e:
                 current_app.logger.error(f"Error cleaning up file {f_path}: {e}", exc_info=True)
 

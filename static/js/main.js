@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadMessage = document.getElementById('uploadMessage');
     const scriptTextarea = document.getElementById('scriptText');
     const generateSpeechBtn = document.getElementById('generateSpeechBtn');
-    const speechMessage = document.getElementById('speechMessage');
+    const speechMessage = document.getElementById('speechMessage'); // Existing message area, might be repurposed or replaced
     const videoPlayer = document.getElementById('videoPlayer');
     const audioPlayer = document.getElementById('audioPlayer');
     const mergeBtn = document.getElementById('mergeBtn');
@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const youtubeProgressText = document.getElementById('youtubeProgressText');
     const statusMessage = document.getElementById('statusMessage');
 
-    // New: Elements for upload and analysis progress
+    // Elements for upload and analysis progress
     const uploadProgressBarContainer = document.getElementById('uploadProgressBarContainer');
     const uploadProgressBar = document.getElementById('uploadProgressBar');
     const uploadProgressText = document.getElementById('uploadProgressText');
@@ -32,13 +32,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const analysisProgressText = document.getElementById('analysisProgressText');
 
     // Section containers to hide/show
-    const uploadSection = document.getElementById('uploadSection'); // Get the upload section element
+    const uploadSection = document.getElementById('uploadSection');
     const scriptSection = document.getElementById('scriptSection');
+    const scriptAudioSection = document.getElementById('scriptAudioSection');
     const speechSection = document.getElementById('speechSection');
     const videoPlaybackSection = document.getElementById('videoPlaybackSection');
     const mergeSection = document.getElementById('mergeSection');
     const mergedVideoPlaybackSection = document.getElementById('mergedVideoPlaybackSection');
     const youtubeUploadDetailsSection = document.getElementById('youtubeUploadDetailsSection');
+
+    // Speech feedback box element (to be created dynamically or added to HTML)
+    let speechFeedbackBox = document.getElementById('speechFeedbackBox'); // Get existing if it's there
 
 
     // Helper to show/hide sections
@@ -82,17 +86,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Store original width to maintain size
+        if (!button.dataset.originalWidth) {
+            button.dataset.originalWidth = button.offsetWidth + 'px';
+        }
+
         if (isProcessing) {
             button.disabled = true;
+            button.style.width = button.dataset.originalWidth; // Apply original width
             button.innerHTML = `<div class="spinner"></div><span class="loading-text">${message}</span>`;
+
             if (messageElement) {
-                messageElement.className = 'message';
+                messageElement.className = 'message'; // Clear previous status
                 messageElement.textContent = 'Please wait, this may take a moment...';
             }
         } else {
             button.disabled = false;
+            button.style.width = ''; // Reset width
             if (button.dataset.originalText) {
-                button.innerHTML = button.dataset.originalText;
+                button.innerHTML = button.dataset.originalText; // Restore original text
             } else {
                 if (button.querySelector('.spinner')) {
                      button.innerHTML = 'Process'; // A generic fallback text
@@ -108,7 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetUI = () => {
         uploadMessage.textContent = '';
         scriptTextarea.value = '';
-        speechMessage.textContent = '';
+        speechMessage.textContent = ''; // Clear existing speech message
+        if (speechFeedbackBox) speechFeedbackBox.textContent = ''; // Clear new feedback box
         videoPlayer.src = '';
         audioPlayer.src = '';
         mergedVideoPlayer.src = '';
@@ -122,8 +135,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateProgressBar(youtubeProgressBar, youtubeProgressText, 0, '');
 
         // Hide all major sections initially
-        hideSection(uploadSection); // Ensure upload section is hidden
+        hideSection(uploadSection);
         hideSection(scriptSection);
+        hideSection(scriptAudioSection);
         hideSection(speechSection);
         hideSection(videoPlaybackSection);
         hideSection(mergeSection);
@@ -178,21 +192,17 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('File selected:', file.name, 'Type:', file.type);
 
             setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, true, 'Starting Upload...');
-            uploadProgressBarContainer.classList.remove('hidden'); // Show upload progress bar
-            analysisProgressBarContainer.classList.remove('hidden'); // Show analysis bar from start
+            uploadProgressBarContainer.classList.remove('hidden');
+            analysisProgressBarContainer.classList.remove('hidden');
 
-
-            // Reset progress bars before new upload
             updateProgressBar(uploadProgressBar, uploadProgressText, 0, 'File Upload: 0%');
             updateProgressBar(analysisProgressBar, analysisProgressText, 0, 'Analysis: Initializing...');
 
-            // Declare formData here, before the try block
             const formData = new FormData();
             formData.append('video', file);
 
-            let es; // Declare EventSource outside try block to access in finally
+            let es;
             try {
-                // XHR for file upload progress
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', '/upload_video', true);
 
@@ -211,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             uploadMessage.className = 'message success';
                             uploadMessage.textContent = uploadResponseData.message;
 
-                            // Now, start the SSE for analysis progress
                             es = new EventSource(`/stream_analysis_progress?video_filename=${encodeURIComponent(uploadResponseData.unique_filename)}`);
 
                             es.onmessage = (event) => {
@@ -223,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     scriptTextarea.value = data.script.map(item => `${item.time}: ${item.description}`).join('\n');
                                     videoPlayer.src = uploadResponseData.video_url;
 
-                                    hideSection(uploadSection); // Hide upload section on completion
+                                    hideSection(uploadSection);
                                     showSection(scriptSection);
                                     showSection(videoPlaybackSection);
                                     if (generateSpeechBtn) generateSpeechBtn.disabled = false;
@@ -232,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     updateProgressBar(analysisProgressBar, analysisProgressText, 0, data.message);
                                     uploadMessage.className = 'message error';
                                     uploadMessage.textContent = data.message || 'Video analysis failed.';
-                                    resetUI(); // Show upload section again on error
+                                    resetUI();
                                     es.close();
                                 }
                             };
@@ -242,20 +251,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                 updateProgressBar(analysisProgressBar, analysisProgressText, 0, 'Analysis failed due to connection error.');
                                 uploadMessage.className = 'message error';
                                 uploadMessage.textContent = 'Video analysis failed due to connection error.';
-                                resetUI(); // Show upload section again on error
+                                resetUI();
                                 if (es) es.close();
                             };
 
                         } else {
                             uploadMessage.className = 'message error';
                             uploadMessage.textContent = uploadResponseData.error || 'Failed to get analysis stream.';
-                            resetUI(); // Show upload section again on error
+                            resetUI();
                             console.error('Upload failed with server response:', uploadResponseData);
                         }
                     } else {
                         uploadMessage.className = 'message error';
                         uploadMessage.textContent = `Server error during upload: ${xhr.statusText}`;
-                        resetUI(); // Show upload section again on error
+                        resetUI();
                         console.error('XHR Upload Error:', xhr.status, xhr.statusText);
                     }
                     setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
@@ -265,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 xhr.onerror = function() {
                     uploadMessage.className = 'message error';
                     uploadMessage.textContent = `Network error during XHR upload.`;
-                    resetUI(); // Show upload section again on error
+                    resetUI();
                     console.error('XHR Network Error.');
                     setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
                 };
@@ -276,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 uploadMessage.className = 'message error';
                 uploadMessage.textContent = `General error during upload/analysis setup: ${error.message}`;
-                resetUI(); // Show upload section again on error
+                resetUI();
                 console.error('General error during setup:', error);
                 setProcessingState(document.getElementById('uploadVideoBtn'), uploadMessage, false);
             }
@@ -296,49 +305,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            setProcessingState(generateSpeechBtn, speechMessage, true, 'Generating Speech...');
-            showSection(speechSection);
+            // Ensure speechFeedbackBox exists or create it
+            if (!speechFeedbackBox) {
+                speechFeedbackBox = document.createElement('div');
+                speechFeedbackBox.id = 'speechFeedbackBox';
+                speechFeedbackBox.className = 'message speech-feedback-box hidden'; // Add new class
+                generateSpeechBtn.parentNode.insertBefore(speechFeedbackBox, generateSpeechBtn.nextSibling);
+            }
+            speechFeedbackBox.classList.remove('hidden'); // Show it
+            speechFeedbackBox.className = 'message speech-feedback-box'; // Reset class
+            speechFeedbackBox.textContent = ''; // Clear previous messages
+
+            setProcessingState(generateSpeechBtn, speechFeedbackBox, true, 'Generating Speech...');
             if (audioPlayer) audioPlayer.src = '';
+            hideSection(scriptAudioSection); // Hide audio section initially
 
             try {
-                const es = new EventSource('/generate_speech');
-                es.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (data.status === 'in_progress') {
-                        speechMessage.className = 'message';
-                        speechMessage.textContent = data.message;
-                    } else if (data.status === 'complete') {
-                        speechMessage.className = 'message success';
-                        speechMessage.textContent = data.message;
-                        if (audioPlayer) audioPlayer.src = data.audio_url;
-                        es.close();
-                        if (mergeBtn) mergeBtn.disabled = false;
-                    } else if (data.status === 'error') {
-                        speechMessage.className = 'message error';
-                        speechMessage.textContent = data.message || 'Speech generation failed.';
-                        es.close();
-                    }
-                };
-                es.onerror = (error) => {
-                    console.error('EventSource failed:', error);
-                    speechMessage.className = 'message error';
-                    speechMessage.textContent = 'Speech generation failed due to connection error.';
-                    es.close();
-                };
-
-                await fetch('/generate_speech', {
+                // Now, use standard fetch POST to a blocking backend route
+                const response = await fetch('/generate_speech', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ script_text: scriptText })
                 });
+                const data = await response.json();
 
+                if (response.ok && data.status === 'complete') {
+                    speechFeedbackBox.className = 'message speech-feedback-box success';
+                    speechFeedbackBox.textContent = data.message;
+                    if (audioPlayer) audioPlayer.src = data.audio_url;
+                    showSection(scriptAudioSection); // Show audio section on complete
+                    if (mergeBtn) mergeBtn.disabled = false;
+                } else {
+                    // Handle error from blocking response
+                    speechFeedbackBox.className = 'message speech-feedback-box error';
+                    speechFeedbackBox.textContent = data.message || 'Speech generation failed.';
+                    console.error('Speech generation failed:', data);
+                }
             } catch (error) {
-                speechMessage.className = 'message error';
-                speechMessage.textContent = `Network error: ${error.message}`;
+                speechFeedbackBox.className = 'message speech-feedback-box error';
+                speechFeedbackBox.textContent = `Network error: ${error.message}`;
+                console.error('Network error during speech generation:', error);
             } finally {
-                setProcessingState(generateSpeechBtn, speechMessage, false);
+                setProcessingState(generateSpeechBtn, speechFeedbackBox, false);
+                // Optionally hide the speech feedback box after a short delay
+                setTimeout(() => {
+                    if (speechFeedbackBox) speechFeedbackBox.classList.add('hidden');
+                }, 3000);
             }
         });
     } else {
@@ -397,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. Check Merged Video (Play)
     if (checkMergedVideoBtn) {
-        checkMergedVideoBtn.addEventListener('click', () => {
+        checkMergedVideoBtn.addEventListener('click', async () => { // Changed to async
             if (mergedVideoPlayer && mergedVideoPlayer.src) {
                 mergedVideoPlayer.play();
                 showSection(youtubeUploadDetailsSection);
@@ -475,3 +489,4 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("YouTube Upload button not found!");
     }
 });
+

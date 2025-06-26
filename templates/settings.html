@@ -12,13 +12,22 @@
     </p>
 
     <form id="settingsForm">
-        <!-- Removed OpenAI API Key field as Whisper integration is temporarily removed -->
-
         <div class="form-group">
             <label for="gemini_api_key">Gemini API Key (for video analysis):</label>
             <input type="text" id="gemini_api_key" name="gemini_api_key" placeholder="AIza..." value="">
             <span class="status-indicator {% if gemini_key_set %}set{% else %}not-set{% endif %}"></span>
             {% if gemini_key_set %}
+                <small style="color: green;"> (Loaded)</small>
+            {% else %}
+                <small style="color: red;"> (Not loaded)</small>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="elevenlabs_api_key">ElevenLabs API Key (for speech synthesis):</label>
+            <input type="text" id="elevenlabs_api_key" name="elevenlabs_api_key" placeholder="YOUR_ELEVENLABS_API_KEY" value="">
+            <span class="status-indicator {% if elevenlabs_key_set %}set{% else %}not-set{% endif %}"></span>
+            {% if elevenlabs_key_set %}
                 <small style="color: green;"> (Loaded)</small>
             {% else %}
                 <small style="color: red;"> (Not loaded)</small>
